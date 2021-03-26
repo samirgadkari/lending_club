@@ -1,0 +1,89 @@
+---
+title: "Lending club"
+author: "Samir Gadkari"
+date: "3/24/2021"
+output: html_document
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(readr)
+```
+
+## 1.1 Read in data
+Since the accepted/rejected files are large, grep it and save all
+"credit_card" rejections to another file. This will make it faster
+(and possible) to load it in memory during the read_csv call.
+
+```{bash}
+grep "id,member_id," $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+
+grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+
+grep "Amount Requested,Application Date" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+
+grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+```
+
+```{r}
+data_path <- paste0(Sys.getenv("DATASETS"), "/financial_datasets",
+                   "/all_lending_club_loan_data")
+
+accepted_cc <- read_csv(
+  paste0(data_path, "/accepted_credit_card_2007_to_2018Q4_2.csv"),
+  col_types = cols(desc = col_character(),
+                   revol_bal_joint = col_double(),
+                   sec_app_fico_range_low = col_double(), 
+                   sec_app_fico_range_high = col_double(),
+                   sec_app_earliest_cr_line =
+                     col_double(),    
+                   sec_app_inq_last_6mths = col_double(),
+                   sec_app_mort_acc = col_double(),
+                   sec_app_open_acc = col_double(),
+                   sec_app_revol_util = col_double(),
+                   sec_app_open_act_il = col_double(),    
+                   sec_app_num_rev_accts = col_double(),
+                   sec_app_earliest_cr_line = 
+                     col_skip(),
+                   sec_app_chargeoff_within_12_mths =
+                     col_double(),
+                   sec_app_collections_12_mths_ex_med =
+                     col_double(),
+                   sec_app_mths_since_last_major_derog =
+                     col_double()
+                  ),
+  progress = show_progress())
+
+head(accepted_cc)
+nrow(accepted_cc)
+```
+```{r}
+nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
+```
+
+Great !! Now we have half a million row values to work with (and that's
+just for the accepted credit applications).
+
+Now read in the rejected credit card file:
+
+```{r}
+filename <- 
+  paste0(data_path, "/rejected_credit_card_2007_to_2018Q4_2.csv")
+
+rejected_cc <-
+  read_csv(filename, progress = show_progress())
+head(rejected_cc)
+nrow(rejected_cc)
+```
+There are 1.3 million rows in the rejected file. But, since we used
+grep to find rows, let's make sure the "credit_card" string is in the
+"Loan Title" column, and nowhere else. Looking at the columns we have
+today, it's probably not possible to put it anywhere else, but
+if we run this script with a different file, there may be other
+columns where "credit_card" will occur. Just good defensive programming.
+
+```{r}
+rejected_cc <- rejected_cc[rejected_cc$`Loan Title` == "credit_card", ]
+nrow(rejected_cc)
+```
+There are still 1.3 million rows.
