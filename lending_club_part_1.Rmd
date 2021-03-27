@@ -63,6 +63,10 @@ nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
 
 Great !! Now we have half a million row values to work with (and that's
 just for the accepted credit applications).
+```{r}
+names(accepted_cc)
+```
+
 
 Now read in the rejected credit card file:
 
@@ -87,3 +91,104 @@ rejected_cc <- rejected_cc[rejected_cc$`Loan Title` == "credit_card", ]
 nrow(rejected_cc)
 ```
 There are still 1.3 million rows.
+
+Replace names with lowercase, and replace spaces with underscores.
+
+```{r}
+names(rejected_cc) <- stringr::str_replace(
+  stringr::str_to_lower(names(rejected_cc)), "\\s+", "_")
+names(rejected_cc)
+```
+
+```{r}
+rejected_cc %>%
+  select(where(is.character)) %>%
+  head()
+```
+
+## 1.2 Merging data and split into training, validation, test sets
+
+Since the variables in the accepted and the rejected dataframes
+are named differently, we will:
+  
+  * match variable names
+  * create a new dataframe with values from accept/reject dataframes
+
+### 1.2.1 Match variable names
+
+Based on the variable names in the accepted and rejected
+dataframes, the mapping between the names looks like:
+
+rejected_cc            -> accepted_cc
+-------------------------------------
+"risk_score"           -> "fico_range_low", "fico_range_high"
+"employment_length"    -> "emp_length"
+"amount_requested"     -> "loan_amt"
+"zip_code"             -> "zip_code"
+"state"                -> "addr_state"
+"debt-to-income_ratio" -> "dti"
+"application_date"     -> "payment_plan_start_date" 
+
+### 1.2.2 Create id for rejects
+
+There is no id column for the reject dataframe, so generate one.
+The only issue with a fake id here is that the same person may have
+applied more than once. We will be considering all such applications
+as coming from distinct individuals.
+
+```{r}
+typeof(accepted_cc$id)
+sum(is.na(accepted_cc$id))
+```
+
+```{r}
+min(rejected_cc$id)
+max(rejected_cc$id)
+```
+
+
+```{r}
+acc_rej_df <- tibble(
+  "risk_score"
+)
+```
+
+## 1.3 Selecting variable names
+
+Now we will:
+
+  * compare data between the two variables
+  * decide if those two variables are useful to discriminate
+    acceptance/rejection
+
+We will start with the risk score:
+
+```{r}
+accepted_risk_scores <- 
+  tibble(values = c(accepted_cc$fico_range_low,
+                    accepted_cc$fico_range_high,
+                    rejected_cc$risk_score),
+         group = c(rep("accepted_fico_range_low",
+                       length(accepted_cc$fico_range_low)),
+                   rep("accepted_fico_range_high",
+                       length(accepted_cc$fico_range_high)),
+                   rep("rejected_risk_score",
+                       length(rejected_cc$risk_score)))
+  )
+
+accepted_risk_scores %>%
+  ggplot(aes(x = values, color = group)) +
+  geom_freqpoly(binwidth = 30)
+  # ggplot(aes(x = values, fill = group)) +
+  # geom_histogram(bins = 50, position = "identity", alpha = 0.2)
+```
+
+As you can see, the rejected risk score histogram midpoint is where
+the accepted fico range low values start. So this will be a good
+variable to use for the acceptance criteria. We can use a cutoff
+of the low value of the accepted fico range low histogram like this:
+```{r}
+score_threshold <- min(accepted_cc$fico_range_low)
+score_threshold
+```
+Anything below this threshold can be rejected.
