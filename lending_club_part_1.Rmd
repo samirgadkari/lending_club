@@ -73,15 +73,28 @@ unique_values <- function(ref) {
   paste(unique(ref), collapse = ",   ")
 }
 
-as.list(accepted_cc %>%
-  select(accepted_cc %>%
-           select_if(is.character) %>%
-           select(!contains("date", ignore.case = TRUE)) %>%
-           summarise(across(everything(), n_distinct)) %>%
-           select(where(~.x[[1]] < 40)) %>%
-           names()) %>%
-  summarise(across(everything(), unique_values)))
+unique_char_col_vals <- function(df_name, df) {
+  writeLines(
+    stringr::str_glue("{df_name}: ------------------------------->>>>>"))
+  
+  result <- as.list(df %>%
+        select(df %>%
+                 select_if(is.character) %>%
+                 select(!contains("date", ignore.case = TRUE)) %>%
+                 summarise(across(everything(), n_distinct)) %>%
+                 select(where(~.x[[1]] < 40)) %>%
+                 names()) %>%
+        summarise(across(everything(), unique_values)))
+
+  print(result)
+  
+  writeLines(
+    stringr::str_glue("<<<<<--------------------------- :{df_name}"))
+}
+
+unique_char_col_vals("accepted_cc", accepted_cc)
 ```
+
 
 Now read in the rejected credit card file:
 
@@ -119,6 +132,10 @@ names(rejected_cc)
 rejected_cc %>%
   select(where(is.character)) %>%
   head()
+```
+
+```{r}
+unique_char_col_vals("rejected_cc", rejected_cc)
 ```
 
 ## 1.2 Merging data and split into training, validation, test sets
