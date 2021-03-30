@@ -61,12 +61,27 @@ nrow(accepted_cc)
 nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
 ```
 
+Maybe we can use the loan_status to show good vs bad loans.
+
 Great !! Now we have half a million row values to work with (and that's
 just for the accepted credit applications).
 ```{r}
-names(accepted_cc)
+print(paste(names(accepted_cc), collapse = ",  "))
 ```
+```{r}
+unique_values <- function(ref) {
+  paste(unique(ref), collapse = ",   ")
+}
 
+as.list(accepted_cc %>%
+  select(accepted_cc %>%
+           select_if(is.character) %>%
+           select(!contains("date", ignore.case = TRUE)) %>%
+           summarise(across(everything(), n_distinct)) %>%
+           select(where(~.x[[1]] < 40)) %>%
+           names()) %>%
+  summarise(across(everything(), unique_values)))
+```
 
 Now read in the rejected credit card file:
 
