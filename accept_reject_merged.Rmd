@@ -16,13 +16,23 @@ Since the accepted/rejected files are large, grep it and save all
 (and possible) to load it in memory during the read_csv call.
 
 ```{bash}
-grep "id,member_id," $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+FILE=$DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+#if [ ! -f "$FILE" ]; then
+#  grep "id,member_id," $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+#fi
 
-grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+if [ ! -f "$FILE" ]; then
+  grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
+fi
 
-grep "Amount Requested,Application Date" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+FILE=$DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+#if [ ! -f "$FILE" ]; then
+#  grep "Amount Requested,Application Date" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv > $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+#fi
 
-grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+if [ ! -f "$FILE" ]; then
+  grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_2007_to_2018Q4_2.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/rejected_credit_card_2007_to_2018Q4_2.csv
+fi
 ```
 
 ```{r}
@@ -61,10 +71,28 @@ nrow(accepted_cc)
 nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
 ```
 
-Maybe we can use the loan_status to show good vs bad loans.
-
 Great !! Now we have half a million row values to work with (and that's
 just for the accepted credit applications).
+
+Let's see which columns are full of NAs or Nulls.
+```{r}
+(selected_cols <- accepted_cc %>%
+  select(which(colMeans(is.na(.)) < 0.02)) %>%
+  names())
+```
+Now we have the columns where the number of NAs are less than 2%.
+We should do this, since this is lending club data, and columns which are
+expected to be useful will not have significant NAs.
+
+Let's select these columns, and remove any rows that have NA values in it.
+This way, we won't have to deal with any missing values. If our model is
+bad, we can always interpolate the missing values.
+
+```{r}
+accepted_cc <- na.omit(accepted_cc[ , selected_cols])
+head(accepted_cc)
+```
+
 ```{r}
 print(paste(names(accepted_cc), collapse = ",  "))
 ```
@@ -133,6 +161,7 @@ rejected_cc %>%
   select(where(is.character)) %>%
   head()
 ```
+There is no id column in the rejected_cc dataframe.
 
 ```{r}
 unique_char_col_vals("rejected_cc", rejected_cc)
@@ -173,17 +202,6 @@ typeof(accepted_cc$id)
 sum(is.na(accepted_cc$id))
 ```
 
-```{r}
-min(rejected_cc$id)
-max(rejected_cc$id)
-```
-
-
-```{r}
-acc_rej_df <- tibble(
-  "risk_score"
-)
-```
 
 ## 1.3 Selecting variable names
 
