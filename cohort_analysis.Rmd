@@ -509,3 +509,41 @@ Current -> In Grace Period -> Late (16-30 days) -> Late (31-120 days) -> Charged
                                                         Default
 Default occurs before Charged Off, but is not specified precisely where.
 Fully Paid can occur before the last payment (if pre-payments are made), or at the time of the last payment, or some time later when the borrower has enough funds.
+
+We should convert the loan_status column into a DPD (days past due) column. We can use this mapping:
+
+  * fully paid: (-Inf, -1) dpd. Numbers are given in a (min, max) range.
+  * current: (0, 0) dpd
+  * in grace period: (1, 15) dpd
+  * late (16-30 days): (16, 30) dpd
+  * late (31-120 days): (31, 120) dpd
+  * default: (45, 60) dpd
+  * charged off: (121, Inf) dpd
+
+```{r}
+train <- train %>%
+  mutate(
+    dpd_min = case_when(
+      loan_status == "Fully Paid" ~ -Inf,
+      loan_status == "Current" ~ 0,
+      loan_status == "In Grace Period" ~ 1,
+      loan_status == "Late (16-30 days)" ~ 16,
+      loan_status == "Late (31-120 days" ~ 31,
+      loan_status == "Default" ~ 45,
+      loan_status == "Charged Off" ~ 121
+    ),
+    dpd_max = case_when(
+      loan_status == "Fully Paid" ~ -1,
+      loan_status == "Current" ~ 0,
+      loan_status == "In Grace Period" ~ 15,
+      loan_status == "Late (16-30 days)" ~ 30,
+      loan_status == "Late (31-120 days" ~ 120,
+      loan_status == "Default" ~ 60,
+      loan_status == "Charged Off" ~ Inf
+    ),
+    .after = loan_status
+  )
+
+head(train)
+```
+
