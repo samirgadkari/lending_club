@@ -123,29 +123,38 @@ unique_char_col_vals("accepted_cc", accepted_cc)
 ```{r}
 n_occur <- data.frame(table(as.integer(accepted_cc$id)))
 n_occur[n_occur$Freq > 1, ]
+remove(n_occur)
 ```
 
 
-Each id value is unique, and none of them are member IDs. This means each line is for a separate credit card.
+Each id value is unique, and none of them are member IDs. This means each line is for a separate loan.
 
 ```{r}
 print(paste(names(accepted_cc), collapse = ",  "))
 ```
 ```{r}
+to_day_month_year <- function(month_year) {
+  as.POSIXct(strptime(paste0("01-", month_year), 
+                      "%d-%b-%Y"))
+}
+
 accepted_cc <- accepted_cc %>%
-  mutate(issue_date = 
-           as.POSIXct(
-             strptime(paste0("01-", accepted_cc$issue_d),  # strptime requires
-                      "%d-%b-%Y")),                        # a full date
-         .after = issue_d
-         ) %>%  
+  mutate(
+    issue_date = to_day_month_year(issue_d), .after = issue_d
+  ) %>%
+  mutate(
+    earliest_cr_line = to_day_month_year(earliest_cr_line),
+    last_pymnt_d = to_day_month_year(last_pymnt_d),
+    last_credit_pull_d = 
+      to_day_month_year(last_credit_pull_d)
+  ) %>%
   select(-issue_d)
 
 min(accepted_cc[["issue_date"]])
 max(accepted_cc[["issue_date"]])
 ```
 
-There are accounts from June 2012 through December 2018.
+There are accounts from `min(accepted_cc[["issue_date"]]` through `min(accepted_cc[["issue_date"]]`.
 
 Let's look at the distribution of the dates:
 
@@ -153,13 +162,205 @@ Let's look at the distribution of the dates:
 accepted_cc %>%
   ggplot(aes(x = issue_date)) +
   geom_histogram(bins = 30)
+
+accepted_cc %>%
+  ggplot(aes(x = earliest_cr_line)) +
+  geom_histogram(bins = 30)
+```
+
+```{r}
+table(accepted_cc$pub_rec)              # public records count?
+table(accepted_cc$pub_rec_bankruptcies) # public record bankruptcies count
+```
+
+> We may need these columns. There are many bankruptcies which we can use
+> to filter out bad applicants - especially when there are more than one.
+
+```{r}
+sum(!near(accepted_cc$funded_amnt,
+          accepted_cc$funded_amnt_inv, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$funded_amnt,
+                       accepted_cc$funded_amnt_inv, tol = 700.0), 
+                 c("funded_amnt", "funded_amnt_inv")])
+sum(!near(accepted_cc$loan_amnt,
+          accepted_cc$funded_amnt, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$loan_amnt,
+                       accepted_cc$funded_amnt, tol = 700.0),
+                 c("loan_amnt", "funded_amnt")])
+```
+
+> The funded amounts, and the loan amounts are close to each other for almost 
+> all of the data.
+> Since there is very little information in these three columns together,
+> we can remove two of them. Let's keep the funded amount column.
+
+```{r}
+accepted_cc <- accepted_cc %>% 
+  select(-c(loan_amnt, funded_amnt_inv))
+```
+
+
+```{r}
+sum(!near(accepted_cc$total_pymnt, 
+          accepted_cc$total_pymnt_inv, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$total_pymnt, 
+          accepted_cc$total_pymnt_inv, tol = 700.0), 
+          c("total_pymnt", "total_pymnt_inv")])
+```
+
+> The payment amounts are close to each other for almost all of the data.
+> Since there is very little information in these two columns together,
+> we can remove one of them.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-total_pymnt_inv)
+```
+
+```{r}
+sum(!near(accepted_cc$out_prncp,
+          accepted_cc$out_prncp_inv, tol = 700.0))
+```
+
+> The two columns (out_prncp, out_prncp_inv) are almost the same.
+> We will remove one of them
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-out_prncp_inv)
+
+accepted_cc %>%
+  select(funded_amnt, term, int_rate, installment,
+         revol_bal, revol_util, total_pymnt, total_rec_prncp, out_prncp, total_rec_int,
+         last_pymnt_amnt, last_pymnt_d, bc_open_to_buy, bc_util, mths_since_recent_bc,
+         num_bc_sats, num_sats, percent_bc_gt_75, total_bal_ex_mort,
+         total_bc_limit)
+```
+
+
+```{r}
+unique(accepted_cc$policy_code)
+```
+
+> Only one policy code - so remove the column.
+> 
+> The url column is not useful - it's been a while, and none of the urls work.
+> Remove the column.
+> The purpose and title columns are also not useful. The stated purpose is
+> for credit card refinancing/payments, but there is no guarantee that is what
+> the loan is going to be used for.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-c(policy_code, url, purpose, title))
+```
+
+```{r}
+head(accepted_cc[accepted_cc$total_bc_limit, ])
+```
+
+```{r}
+table(accepted_cc$tax_liens)
+table(accepted_cc$debt_settlement_flag)
+table(accepted_cc$hardship_flag)
+```
+
+> There are very few hardship cases - remove them.
+
+```{r}
+table(accepted_cc$hardship_flag)
+accepted_cc <- accepted_cc %>%
+  filter(hardship_flag == "N")
+
+table(accepted_cc$hardship_flag)
+accepted_cc <- accepted_cc %>%
+  select(-c(hardship_flag))
+```
+
+```{r}
+table(accepted_cc$inq_last_6mths)
+```
+
+```{r}
+table(accepted_cc$delinq_2yrs)
 ```
 ```{r}
-head(accepted_cc$pub_rec)              # public records count?
-head(accepted_cc$pub_rec_bankruptcies) # public record bankruptcies count
-head(accepted_cc$funded_amnt)
-head(accepted_cc$funded_amnt_inv)
-
-accepted_cc[accepted_cc$funded_amnt != accepted_cc$funded_amnt_inv, ]
+table(accepted_cc$pymnt_plan)
 ```
+
+> There are only 96 payment plans set up. We can ignore this column,
+> or better yet, remove these rows, as they will get averaged out.
+
+```{r}
+if ("y" %in% accepted_cc$pymnt_plan) {
+  accepted_cc <- accepted_cc %>%
+    filter(pymnt_plan == "y")
+}
+
+table(accepted_cc$pymnt_plan)
+
+accepted_cc <- accepted_cc %>%
+  select(-c(pymnt_plan))
+```
+
+
+```{r}
+table(accepted_cc$verification_status)
+```
+
+```{r}
+table(accepted_cc$home_ownership)
+```
+
+> We can remove the ANY, NONE, OTHER rows.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  filter(home_ownership %in% c("MORTGAGE", "OWN", "RENT"))
+table(accepted_cc$home_ownership)
+```
+
+```{r}
+table(accepted_cc$term)
+```
+```{r}
+table(accepted_cc$mort_acc)
+```
+
+```{r}
+table(accepted_cc$chargeoff_within_12_mths)
+```
+
+```{r}
+head(accepted_cc$installment)
+```
+
+```{r}
+table(accepted_cc$acc_now_delinq)
+```
+
+```{r}
+table(accepted_cc$acc_open_past_24mths)
+```
+
+```{r}
+head(accepted_cc)
+```
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-c("mths_since_recent_bc", "num_bc_sats", "num_sats", 
+            "percent_bc_gt_75", "tax_liens", "total_bal_ex_mort", 
+            "total_bc_limit", "disbursement_method"))
+```
+
+```{r}
+table(accepted_cc$loan_status)
+```
+
+```{r}
+print(paste0(names(accepted_cc), collapse = ", "))
+accepted_cc
+```
+
 
