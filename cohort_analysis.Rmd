@@ -376,17 +376,57 @@ accepted_cc
 
 ## 1.7 Split the data into training, validation, test sets
 
+There is not enough data to split by term of the loan (36-month, 60-month), and apply the processing to each term type. When this is done, there are some cohorts with NAs in some of the loan_status. This is why we will go with the full dataset.
+
+Keep 60% in the training dataset, 20% in the validation dataset, and 20% in the testing dataset. For inference, the training dataset is used. For prediction, the training and validation datasets are used. Once satisfied, the testing dataset is used only once to get the final prediction results.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  mutate(n = row_number()) %>% # create row number column
+  select(n, everything())
+
+train <- accepted_cc %>%
+  group_by(loan_status) %>%
+  sample_frac(0.6)
+
+validate_test <- accepted_cc %>% anti_join(train)
+
+validate <- validate_test %>%
+  group_by(loan_status) %>%
+  sample_frac(0.5)
+
+test <- validate_test %>% anti_join(validate)
+remove(validate_test)
+```
+
+```{r}
+nrow(accepted_cc)
+nrow(train)
+nrow(validate)
+nrow(test)
+```
+
+```{r}
+table(train$loan_status)
+table(validate$loan_status)
+table(test$loan_status)
+```
+
+It's good - each dataset has at least 1 value of each attribute of loan_status.
+
+## 1.8 Get cohorts using the training set
+
 We're analyzing cohorts, so we will split the data into multiple overlapping cohorts. Aggregating those cohorts will allow us to make predictions over business cycles.
 
 ```{r}
-range(accepted_cc$issue_date)
+range(train$issue_date)
 ```
 
 The range is 6 years 6 months. To split it into 3, we will give each cohort 2 years 2 months.
 
 ```{r}
-min_cohort_date <- min(accepted_cc$issue_date)
-max_cohort_date <- max(accepted_cc$issue_date)
+min_cohort_date <- min(train$issue_date)
+max_cohort_date <- max(train$issue_date)
 
 cohorts <- list(c(min_cohort_date, 
                   add_with_rollback(
@@ -405,13 +445,13 @@ cohorts <- list(c(min_cohort_date,
 
 cohorts
 
+# We assert that the end dates match
 testthat::expect_equal(cohorts[[1]][[1]], min_cohort_date)
 testthat::expect_equal(cohorts[[3]][[2]], max_cohort_date)
 ```
 
-
 ```{r}
-accepted_cc <- accepted_cc %>%
+train <- train %>%
   mutate(
     cohort = case_when(
       issue_date %within% interval(cohorts[[1]][[1]], 
@@ -423,19 +463,49 @@ accepted_cc <- accepted_cc %>%
       )
   ) 
 
-accepted_cc %>%
+train %>%
   group_by(cohort) %>%
   summarise(
     n = n()
   )
 
-accepted_cc %>%
+train %>%
   ggplot(aes(issue_date)) +
     geom_histogram(bins = 30) +
     facet_wrap(~cohort)
 ```
 
 ```{r}
-tail(accepted_cc)
+cohort_groupings <- train %>%
+  group_by(cohort) %>%
+  summarise(
+    names = names(table(loan_status)),
+    num_rows = table(loan_status))
+
+cohort_groupings <- 
+  pivot_wider(cohort_groupings, names_from = names,
+              values_from = num_rows)
+cohort_groupings
 ```
 
+This is what the [Lending Club site](https://help.lendingclub.com/hc/en-us/articles/215488038-What-do-the-different-Note-statuses-mean-) says about the meaning of each loan status:
+
+  * Current: Loan is up to date on all outstanding payments. 
+  * In Grace Period: Loan is past due but within the 15-day grace period.
+  * Late (16-30): Loan has not been current for 16 to 30 days. Learn more about the
+    tools LendingClub has to deal with delinquent borrowers.
+  * Late (31-120): Loan has not been current for 31 to 120 days. Learn more about the
+    tools LendingClub has to deal with delinquent borrowers.
+  * Fully paid: Loan has been fully repaid, either at the expiration of the 3- or
+    5-year year term or as a result of a prepayment.
+  * Default: Loan has not been current for an extended period of time. Learn more
+    about the difference between “default” and “charge off”. 
+  * Charged Off: Loan for which there is no longer a reasonable expectation of
+    further payments. Charge Off typically occurs when a loan is 120 days or more
+    past due. 
+
+So the loan status follows this path:
+Current -> In Grace Period -> Late (16-30 days) -> Late (31-120 days) -> Charged Off
+                                                        Default
+Default occurs before Charged Off, but is not specified precisely where.
+Fully Paid can occur before the last payment (if pre-payments are made), or at the time of the last payment, or some time later when the borrower has enough funds.
