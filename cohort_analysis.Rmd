@@ -11,9 +11,7 @@ library(readr)
 ```
 
 ## 1.1 Read in data
-Since the accepted/rejected files are large, grep it and save all
-"credit_card" rejections to another file. This will make it faster
-(and possible) to load it in memory during the read_csv call.
+Since the accepted/rejected files are large, grep it and save all "credit_card" rejections to another file. This will make it faster (and possible) to load it in memory during the read_csv call.
 
 ```{bash}
 FILE=$DATASETS/financial_datasets/all_lending_club_loan_data/accepted_credit_card_2007_to_2018Q4_2.csv
@@ -65,22 +63,19 @@ nrow(accepted_cc)
 nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
 ```
 
-Great !! Now we have half a million row values to work with (and that's
-just for the accepted credit applications).
+Great !! Now we have half a million row values to work with (and that's just for the accepted credit applications).
 
-Let's see which columns are full of NAs or Nulls.
+## 1.2 Select columns and rows that are not full of NAs
+
+Let's see which columns are not full of NAs.
 ```{r}
 (selected_cols <- accepted_cc %>%
   select(which(colMeans(is.na(.)) < 0.02)) %>%
   names())
 ```
-Now we have the columns where the number of NAs are less than 2%.
-We should do this, since this is lending club data, and columns which are
-expected to be useful will not have significant NAs.
+Now we have the columns where the number of NAs are less than 2%. We should do this, since this is lending club data, and columns which are expected to be useful will not have significant NAs.
 
-Let's select these columns, and remove any rows that have NA values in it.
-This way, we won't have to deal with any missing values. If our model is
-bad, we can always interpolate the missing values.
+Let's select these columns, and remove any rows that have NA values in it. This way, we won't have to deal with any missing values. If our model is bad, we can always interpolate the missing values.
 
 ```{r}
 accepted_cc <- na.omit(accepted_cc[ , selected_cols])
@@ -92,6 +87,8 @@ Now we have a large number of rows, enough to work with.
 ```{r}
 print(paste(names(accepted_cc), collapse = ",  "))
 ```
+## 1.3 List unique values in character columns
+
 ```{r}
 unique_values <- function(ref) {
   paste(unique(ref), collapse = ",   ")
@@ -118,7 +115,7 @@ unique_char_col_vals <- function(df_name, df) {
 
 unique_char_col_vals("accepted_cc", accepted_cc)
 ```
-
+## 1.4 Understanding the id column
 
 ```{r}
 n_occur <- data.frame(table(as.integer(accepted_cc$id)))
@@ -132,6 +129,13 @@ Each id value is unique, and none of them are member IDs. This means each line i
 ```{r}
 print(paste(names(accepted_cc), collapse = ",  "))
 ```
+
+## 1.5 Date columns
+
+### 1.5.1 Convert date character columns to POSIXct format
+
+Convert all date columns to POSIXct for ease of use later. There is no day specified, and POSIXct requires it. We will add the first day of the month to each date.
+
 ```{r}
 to_day_month_year <- function(month_year) {
   as.POSIXct(strptime(paste0("01-", month_year), 
@@ -156,6 +160,8 @@ max(accepted_cc[["issue_date"]])
 
 There are accounts from `min(accepted_cc[["issue_date"]]` through `min(accepted_cc[["issue_date"]]`.
 
+### 1.5.2 Distribution of date columns
+
 Let's look at the distribution of the dates:
 
 ```{r}
@@ -167,6 +173,8 @@ accepted_cc %>%
   ggplot(aes(x = earliest_cr_line)) +
   geom_histogram(bins = 30)
 ```
+
+## 1.6 Numerical columns
 
 ```{r}
 table(accepted_cc$pub_rec)              # public records count?
@@ -346,6 +354,8 @@ table(accepted_cc$acc_open_past_24mths)
 ```{r}
 head(accepted_cc)
 ```
+
+## 1.6.1 Remove numerical columns that are not useful
 
 ```{r}
 accepted_cc <- accepted_cc %>%
