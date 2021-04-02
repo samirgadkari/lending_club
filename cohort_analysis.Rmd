@@ -8,6 +8,7 @@ output: html_document
 ```{r include=FALSE}
 library(tidyverse)
 library(readr)
+library(lubridate)
 ```
 
 ## 1.1 Read in data
@@ -373,4 +374,68 @@ print(paste0(names(accepted_cc), collapse = ", "))
 accepted_cc
 ```
 
+## 1.7 Split the data into training, validation, test sets
+
+We're analyzing cohorts, so we will split the data into multiple overlapping cohorts. Aggregating those cohorts will allow us to make predictions over business cycles.
+
+```{r}
+range(accepted_cc$issue_date)
+```
+
+The range is 6 years 6 months. To split it into 3, we will give each cohort 2 years 2 months.
+
+```{r}
+min_cohort_date <- min(accepted_cc$issue_date)
+max_cohort_date <- max(accepted_cc$issue_date)
+
+cohorts <- list(c(min_cohort_date, 
+                  add_with_rollback(
+                    min_cohort_date, period(years = 2, months = 2))
+                  ),
+                c(add_with_rollback(
+                    min_cohort_date, period(years = 2, months = 2)),
+                  add_with_rollback(
+                    min_cohort_date, period(years = 4, months = 4))
+                  ),
+                c(add_with_rollback(
+                    min_cohort_date, period(years = 4, months = 4)),
+                  add_with_rollback(
+                    min_cohort_date, period(years = 6, months = 6)))
+                )
+
+cohorts
+
+testthat::expect_equal(cohorts[[1]][[1]], min_cohort_date)
+testthat::expect_equal(cohorts[[3]][[2]], max_cohort_date)
+```
+
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  mutate(
+    cohort = case_when(
+      issue_date %within% interval(cohorts[[1]][[1]], 
+                                   cohorts[[1]][[2]]) ~ 1,
+      issue_date %within% interval(cohorts[[2]][[1]], 
+                                   cohorts[[2]][[2]]) ~ 2,
+      issue_date %within% interval(cohorts[[3]][[1]], 
+                                   cohorts[[3]][[2]]) ~ 3
+      )
+  ) 
+
+accepted_cc %>%
+  group_by(cohort) %>%
+  summarise(
+    n = n()
+  )
+
+accepted_cc %>%
+  ggplot(aes(issue_date)) +
+    geom_histogram(bins = 30) +
+    facet_wrap(~cohort)
+```
+
+```{r}
+tail(accepted_cc)
+```
 
