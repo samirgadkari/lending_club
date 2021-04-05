@@ -376,7 +376,25 @@ accepted_cc
 
 ## 1.7 Split the data into training, validation, test sets
 
-There is not enough data to split by term of the loan (36-month, 60-month), and apply the processing to each term type. When this is done, there are some cohorts with NAs in some of the loan_status. This is why we will go with the full dataset.
+```{r}
+accepted_cc %>%
+  group_by(term) %>%
+  summarise(
+    min_issue_date = min(issue_date),
+    max_issue_date = max(issue_date),
+    n = n()
+  )
+```
+
+We will use the 36-month data. This will allow us to get two non-overlapping cohorts within the 6-year data that we have. This will allow us to compare values of each of the columns we want to use between the cohorts. We should only use columns that are stable, and don't change from cohort to cohort. This will make our analysis long-lasting and future proof.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  filter(term == "36 months") %>%
+  select(-term)
+
+head(accepted_cc)
+```
 
 Keep 60% in the training dataset, 20% in the validation dataset, and 20% in the testing dataset. For inference, the training dataset is used. For prediction, the training and validation datasets are used. Once satisfied, the testing dataset is used only once to get the final prediction results.
 
@@ -421,6 +439,32 @@ We're analyzing cohorts, so we will split the data into multiple overlapping coh
 ```{r}
 range(train$issue_date)
 ```
+
+```{r}
+train %>%
+  ggplot(aes(issue_date)) +
+  geom_histogram(bins = 36)
+```
+
+Let's see how many 36-month loans were issues around the beginning of 2014.
+
+```{r}
+x <- train %>%
+  filter(issue_date %within% interval(ymd("2013-10-01"),
+                                      ymd("2013-12-31")))
+nrow(x)
+table(x$loan_status)
+
+x <- train %>%
+  filter(issue_date %within% interval(ymd("2015-10-01"),
+                                      ymd("2015-12-31")))
+nrow(x)
+table(x$loan_status)
+
+remove(x)
+```
+
+
 
 The range is 6 years 6 months. To split it into 3, we will give each cohort 2 years 2 months.
 
@@ -487,6 +531,8 @@ cohort_groupings <-
               values_from = num_rows)
 cohort_groupings
 ```
+
+## 1.9 Add DPD (Days Past Due) columns
 
 This is what the [Lending Club site](https://help.lendingclub.com/hc/en-us/articles/215488038-What-do-the-different-Note-statuses-mean-) says about the meaning of each loan status:
 
