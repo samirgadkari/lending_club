@@ -1,0 +1,803 @@
+---
+title: "Lending club"
+author: "Samir Gadkari"
+date: "3/24/2021"
+output: html_document
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(dbplyr)
+library(DBI)
+library(lubridate)
+```
+
+## 1.1 Read in data
+
+```{r}
+db_connect <- function(host, port, dbname) {
+  
+  user <- keyring::key_list("super_dev")
+  print(user)
+  
+  DBI::dbConnect(RPostgres::Postgres(),
+            dbname = dbname,
+            host = host,
+            port = port,
+            user = user$username,
+            password = keyring::key_get("super_dev", 
+                                        user$username))
+}
+
+db_disconnect <- function(con) {
+  dbDisconnect(con)
+}
+```
+
+```{r}
+con <- db_connect("localhost", "5432", "lendingclub")
+```
+
+This is how you can access the list of all databases in the Postgres server.
+
+```{sql connection=con}
+SELECT datname
+FROM pg_database
+WHERE datistemplate = false;
+```
+This is how you can access the list of all tables in your database.
+
+```{sql connection=con}
+SELECT *
+FROM pg_catalog.pg_tables;
+```
+
+Create the loans table schema. There are a few issues here:
+
+  * dates are in "short form of the month"-"4 digit year" format.
+    We will read this in as VARCHAR(10). Postgres requires a day
+    in the date string to parse it into a date.
+  * Percentages are given with the % sign at the end. This means
+    we have to use VARCHAR(10) to read this field in
+  * Postgres knows to use just enough memory to fit the largest
+    string for each character column. This frees us from requiring
+    to specify the right amount of bytes in the VARCHAR().
+  * Once loaded into the database, we can issue SQL statements
+    or DBI queries to fetch just the required data, thus saving
+    memory and time.
+    
+```{sql connection=con}
+CREATE TABLE loans (
+  V1 SERIAL,
+  id SERIAL,
+  loan_amnt REAL,
+  funded_amnt REAL,
+  funded_amnt_inv REAL,
+  term VARCHAR(10),
+  int_rate VARCHAR(10),
+  installment REAL,
+  grade VARCHAR(1), -- instead of VARCHAR(2)
+  sub_grade VARCHAR(2),
+  emp_title VARCHAR(100),
+  emp_length VARCHAR(50),
+  home_ownership VARCHAR(50),
+  annual_inc REAL,
+  verification_status VARCHAR(20),
+  issue_d VARCHAR(10),
+  loan_status VARCHAR(100),
+  pymnt_plan VARCHAR(2),
+  url VARCHAR(256),
+  purpose VARCHAR(128),
+  title VARCHAR(100),
+  zip_code VARCHAR(10),
+  addr_state VARCHAR(2),
+  dti REAL,
+  delinq_2yrs SMALLINT,
+  earliest_cr_line VARCHAR(10),
+  fico_range_low SMALLINT,
+  fico_range_high SMALLINT,
+  inq_last_6mths SMALLINT,
+  mths_since_last_delinq SMALLINT,
+  mths_since_last_record SMALLINT,
+  open_acc SMALLINT,
+  pub_rec SMALLINT,
+  revol_bal REAL,
+  revol_util VARCHAR(10),
+  total_acc SMALLINT,
+  initial_list_status CHAR(1),
+  out_prncp REAL,
+  out_prncp_inv REAL,
+  total_pymnt REAL,
+  total_pymnt_inv REAL,
+  total_rec_prncp REAL,
+  total_rec_int REAL,
+  total_rec_late_fee REAL,
+  recoveries REAL,
+  collection_recovery_fee REAL,
+  last_pymnt_d VARCHAR(10),
+  last_pymnt_amnt REAL,
+  next_pymnt_d VARCHAR(10),
+  last_credit_pull_d VARCHAR(10),
+  last_fico_range_high SMALLINT,
+  last_fico_range_low SMALLINT,
+  collections_12_mths_ex_med REAL,
+  mths_since_last_major_derog SMALLINT,
+  policy_code SMALLINT,
+  application_type VARCHAR(20),
+  annual_inc_joint REAL,
+  dti_joint REAL,
+  verification_status_joint VARCHAR(15),
+  acc_now_delinq SMALLINT,
+  tot_coll_amt REAL,
+  tot_cur_bal REAL,
+  open_acc_6m REAL,
+  open_act_il SMALLINT,
+  open_il_12m SMALLINT,
+  open_il_24m SMALLINT,
+  mths_since_rcnt_il SMALLINT,
+  total_bal_il REAL,
+  il_util VARCHAR(10),
+  open_rv_12m SMALLINT,
+  open_rv_24m SMALLINT,
+  max_bal_bc REAL,
+  all_util VARCHAR(10),
+  total_rev_hi_lim REAL,
+  inq_fi SMALLINT,
+  total_cu_tl SMALLINT,
+  inq_last_12m SMALLINT,
+  acc_open_past_24mths SMALLINT,
+  avg_cur_bal REAL,
+  bc_open_to_buy REAL,
+  bc_util VARCHAR(10),
+  chargeoff_within_12_mths SMALLINT,
+  delinq_amnt REAL,
+  mo_sin_old_il_acct SMALLINT,
+  mo_sin_old_rev_tl_op SMALLINT,
+  mo_sin_rcnt_rev_tl_op SMALLINT,
+  mo_sin_rcnt_tl SMALLINT,
+  mort_acc SMALLINT,
+  mths_since_recent_bc SMALLINT,
+  mths_since_recent_bc_dlq SMALLINT,
+  mths_since_recent_inq SMALLINT,
+  mths_since_recent_revol_delinq SMALLINT,
+  num_accts_ever_120_pd SMALLINT,
+  num_actv_bc_tl SMALLINT,
+  num_actv_rev_tl SMALLINT,
+  num_bc_sats SMALLINT,
+  num_bc_tl SMALLINT,
+  num_il_tl SMALLINT,
+  num_op_rev_tl SMALLINT,
+  num_rev_accts SMALLINT,
+  num_rev_tl_bal_gt_0 SMALLINT,
+  num_sats SMALLINT,
+  num_tl_120dpd_2m SMALLINT,
+  num_tl_30dpd SMALLINT,
+  num_tl_90g_dpd_24m SMALLINT,
+  num_tl_op_past_12m SMALLINT,
+  pct_tl_nvr_dlq REAL,
+  percent_bc_gt_75 REAL,
+  pub_rec_bankruptcies SMALLINT,
+  tax_liens SMALLINT,
+  tot_hi_cred_lim REAL,
+  total_bal_ex_mort REAL,
+  total_bc_limit REAL,
+  total_il_high_credit_limit REAL,
+  revol_bal_joint REAL,
+  sec_app_fico_range_low SMALLINT,
+  sec_app_fico_range_high SMALLINT,
+  sec_app_earliest_cr_line VARCHAR(10),
+  sec_app_inq_last_6mths SMALLINT,
+  sec_app_mort_acc SMALLINT,
+  sec_app_open_acc SMALLINT,
+  sec_app_revol_util VARCHAR(10),
+  sec_app_open_act_il SMALLINT,
+  sec_app_num_rev_accts SMALLINT,
+  sec_app_chargeoff_within_12_mths SMALLINT,
+  sec_app_collections_12_mths_ex_med SMALLINT,
+  hardship_flag CHAR(1),
+  hardship_type VARCHAR(100),
+  hardship_reason VARCHAR(100),
+  hardship_status VARCHAR(50),
+  deferral_term SMALLINT,
+  hardship_amount REAL,
+  hardship_start_date VARCHAR(10),
+  hardship_end_date VARCHAR(10),
+  payment_plan_start_date VARCHAR(10),
+  hardship_length SMALLINT,
+  hardship_dpd SMALLINT,
+  hardship_loan_status VARCHAR(50),
+  orig_projected_additional_accrued_interest REAL,
+  hardship_payoff_balance_amount REAL,
+  hardship_last_payment_amount REAL,
+  debt_settlement_flag CHAR(1),
+  PRIMARY KEY (id)
+);
+```
+
+Now populate the loans table by loading it from the csv file.
+```{sql connection=con}
+COPY loans(V1,id,loan_amnt,funded_amnt,funded_amnt_inv,term,int_rate,installment,grade,sub_grade,emp_title,emp_length,home_ownership,annual_inc,verification_status,issue_d,loan_status,pymnt_plan,url,purpose,title,zip_code,addr_state,dti,delinq_2yrs,earliest_cr_line,fico_range_low,fico_range_high,inq_last_6mths,mths_since_last_delinq,mths_since_last_record,open_acc,pub_rec,revol_bal,revol_util,total_acc,initial_list_status,out_prncp,out_prncp_inv,total_pymnt,total_pymnt_inv,total_rec_prncp,total_rec_int,total_rec_late_fee,recoveries,collection_recovery_fee,last_pymnt_d,last_pymnt_amnt,next_pymnt_d,last_credit_pull_d,last_fico_range_high,last_fico_range_low,collections_12_mths_ex_med,mths_since_last_major_derog,policy_code,application_type,annual_inc_joint,dti_joint,verification_status_joint,acc_now_delinq,tot_coll_amt,tot_cur_bal,open_acc_6m,open_act_il,open_il_12m,open_il_24m,mths_since_rcnt_il,total_bal_il,il_util,open_rv_12m,open_rv_24m,max_bal_bc,all_util,total_rev_hi_lim,inq_fi,total_cu_tl,inq_last_12m,acc_open_past_24mths,avg_cur_bal,bc_open_to_buy,bc_util,chargeoff_within_12_mths,delinq_amnt,mo_sin_old_il_acct,mo_sin_old_rev_tl_op,mo_sin_rcnt_rev_tl_op,mo_sin_rcnt_tl,mort_acc,mths_since_recent_bc,mths_since_recent_bc_dlq,mths_since_recent_inq,mths_since_recent_revol_delinq,num_accts_ever_120_pd,num_actv_bc_tl,num_actv_rev_tl,num_bc_sats,num_bc_tl,num_il_tl,num_op_rev_tl,num_rev_accts,num_rev_tl_bal_gt_0,num_sats,num_tl_120dpd_2m,num_tl_30dpd,num_tl_90g_dpd_24m,num_tl_op_past_12m,pct_tl_nvr_dlq,percent_bc_gt_75,pub_rec_bankruptcies,tax_liens,tot_hi_cred_lim,total_bal_ex_mort,total_bc_limit,total_il_high_credit_limit,revol_bal_joint,sec_app_fico_range_low,sec_app_fico_range_high,sec_app_earliest_cr_line,sec_app_inq_last_6mths,sec_app_mort_acc,sec_app_open_acc,sec_app_revol_util,sec_app_open_act_il,sec_app_num_rev_accts,sec_app_chargeoff_within_12_mths,sec_app_collections_12_mths_ex_med,hardship_flag,hardship_type,hardship_reason,hardship_status,deferral_term,hardship_amount,hardship_start_date,hardship_end_date,payment_plan_start_date,hardship_length,hardship_dpd,hardship_loan_status,orig_projected_additional_accrued_interest,hardship_payoff_balance_amount,hardship_last_payment_amount,debt_settlement_flag)
+FROM '/Users/samirgadkari/work/datasets/financial_datasets/all_lending_club_loan_data/latest_loan_status_2007-2020Q3.csv'
+DELIMITER ','
+CSV HEADER;
+```
+
+```{r}
+db_disconnect(con)
+```
+
+Since the accepted/rejected files are large, grep it and save all "credit_card" rejections to another file. This will make it faster (and possible) to load it in memory during the read_csv call.
+
+```{bash}
+FILE=$DATASETS/financial_datasets/all_lending_club_loan_data/latest_loan_status_2007-2020Q3_cleaned.csv
+
+if [ ! -f "$FILE" ]; then
+  grep "credit_card" $DATASETS/financial_datasets/all_lending_club_loan_data/latest_loan_status_2007-2020Q3.csv >> $DATASETS/financial_datasets/all_lending_club_loan_data/latest_loan_status_2007-2020Q3_cleaned.csv
+fi
+```
+
+```{r}
+data_path <- paste0(Sys.getenv("DATASETS"), "/financial_datasets",
+                   "/all_lending_club_loan_data")
+
+accepted_cc <- read_csv(
+  paste0(data_path, "/accepted_credit_card_2007_to_2018Q4_2.csv"),
+  col_types = cols(desc = col_character(),
+                   revol_bal_joint = col_double(),
+                   sec_app_fico_range_low = col_double(), 
+                   sec_app_fico_range_high = col_double(),
+                   sec_app_earliest_cr_line =
+                     col_double(),    
+                   sec_app_inq_last_6mths = col_double(),
+                   sec_app_mort_acc = col_double(),
+                   sec_app_open_acc = col_double(),
+                   sec_app_revol_util = col_double(),
+                   sec_app_open_act_il = col_double(),    
+                   sec_app_num_rev_accts = col_double(),
+                   sec_app_earliest_cr_line = 
+                     col_skip(),
+                   sec_app_chargeoff_within_12_mths =
+                     col_double(),
+                   sec_app_collections_12_mths_ex_med =
+                     col_double(),
+                   sec_app_mths_since_last_major_derog =
+                     col_double()
+                  ),
+  progress = show_progress())
+
+head(accepted_cc)
+nrow(accepted_cc)
+```
+```{r}
+nrow(accepted_cc[accepted_cc$purpose == "credit_card", ])
+```
+
+Great !! Now we have half a million row values to work with (and that's just for the accepted credit applications).
+
+## 1.2 Select columns and rows that are not full of NAs
+
+Let's see which columns are not full of NAs.
+```{r}
+(selected_cols <- accepted_cc %>%
+  select(which(colMeans(is.na(.)) < 0.02)) %>%
+  names())
+```
+Now we have the columns where the number of NAs are less than 2%. We should do this, since this is lending club data, and columns which are expected to be useful will not have significant NAs.
+
+Let's select these columns, and remove any rows that have NA values in it. This way, we won't have to deal with any missing values. If our model is bad, we can always interpolate the missing values.
+
+```{r}
+accepted_cc <- na.omit(accepted_cc[ , selected_cols])
+head(accepted_cc)
+```
+
+Now we have a large number of rows, enough to work with.
+
+```{r}
+print(paste(names(accepted_cc), collapse = ",  "))
+```
+## 1.3 List unique values in character columns
+
+```{r}
+unique_values <- function(ref) {
+  paste(unique(ref), collapse = ",   ")
+}
+
+unique_char_col_vals <- function(df_name, df) {
+  writeLines(
+    stringr::str_glue("{df_name}: ------------------------------->>>>>"))
+  
+  result <- as.list(df %>%
+        select(df %>%
+                 select_if(is.character) %>%
+                 select(!contains("date", ignore.case = TRUE)) %>%
+                 summarise(across(everything(), n_distinct)) %>%
+                 select(where(~.x[[1]] < 40)) %>%
+                 names()) %>%
+        summarise(across(everything(), unique_values)))
+
+  print(result)
+  
+  writeLines(
+    stringr::str_glue("<<<<<--------------------------- :{df_name}"))
+}
+
+unique_char_col_vals("accepted_cc", accepted_cc)
+```
+## 1.4 Understanding the id column
+
+```{r}
+n_occur <- data.frame(table(as.integer(accepted_cc$id)))
+n_occur[n_occur$Freq > 1, ]
+remove(n_occur)
+```
+
+
+Each id value is unique, and none of them are member IDs. This means each line is for a separate loan.
+
+```{r}
+print(paste(names(accepted_cc), collapse = ",  "))
+```
+
+## 1.5 Date columns
+
+### 1.5.1 Convert date character columns to POSIXct format
+
+Convert all date columns to POSIXct for ease of use later. There is no day specified, and POSIXct requires it. We will add the first day of the month to each date.
+
+```{r}
+to_day_month_year <- function(month_year) {
+  as.POSIXct(strptime(paste0("01-", month_year), 
+                      "%d-%b-%Y"))
+}
+
+accepted_cc <- accepted_cc %>%
+  mutate(
+    issue_date = to_day_month_year(issue_d), .after = issue_d
+  ) %>%
+  mutate(
+    earliest_cr_line = to_day_month_year(earliest_cr_line),
+    last_pymnt_d = to_day_month_year(last_pymnt_d),
+    last_credit_pull_d = 
+      to_day_month_year(last_credit_pull_d)
+  ) %>%
+  select(-issue_d)
+
+min(accepted_cc[["issue_date"]])
+max(accepted_cc[["issue_date"]])
+```
+
+There are accounts from `min(accepted_cc[["issue_date"]]` through `min(accepted_cc[["issue_date"]]`.
+
+### 1.5.2 Distribution of date columns
+
+Let's look at the distribution of the dates:
+
+```{r}
+accepted_cc %>%
+  ggplot(aes(x = issue_date)) +
+  geom_histogram(bins = 30)
+
+accepted_cc %>%
+  ggplot(aes(x = earliest_cr_line)) +
+  geom_histogram(bins = 30)
+```
+
+## 1.6 Numerical columns
+
+```{r}
+table(accepted_cc$pub_rec)              # public records count?
+table(accepted_cc$pub_rec_bankruptcies) # public record bankruptcies count
+```
+
+> We may need these columns. There are many bankruptcies which we can use
+> to filter out bad applicants - especially when there are more than one.
+
+```{r}
+sum(!near(accepted_cc$funded_amnt,
+          accepted_cc$funded_amnt_inv, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$funded_amnt,
+                       accepted_cc$funded_amnt_inv, tol = 700.0), 
+                 c("funded_amnt", "funded_amnt_inv")])
+sum(!near(accepted_cc$loan_amnt,
+          accepted_cc$funded_amnt, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$loan_amnt,
+                       accepted_cc$funded_amnt, tol = 700.0),
+                 c("loan_amnt", "funded_amnt")])
+```
+
+> The funded amounts, and the loan amounts are close to each other for almost 
+> all of the data.
+> Since there is very little information in these three columns together,
+> we can remove two of them. Let's keep the funded amount column.
+
+```{r}
+accepted_cc <- accepted_cc %>% 
+  select(-c(loan_amnt, funded_amnt_inv))
+```
+
+
+```{r}
+sum(!near(accepted_cc$total_pymnt, 
+          accepted_cc$total_pymnt_inv, tol = 700.0))
+head(accepted_cc[!near(accepted_cc$total_pymnt, 
+          accepted_cc$total_pymnt_inv, tol = 700.0), 
+          c("total_pymnt", "total_pymnt_inv")])
+```
+
+> The payment amounts are close to each other for almost all of the data.
+> Since there is very little information in these two columns together,
+> we can remove one of them.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-total_pymnt_inv)
+```
+
+```{r}
+sum(!near(accepted_cc$out_prncp,
+          accepted_cc$out_prncp_inv, tol = 700.0))
+```
+
+> The two columns (out_prncp, out_prncp_inv) are almost the same.
+> We will remove one of them
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-out_prncp_inv)
+
+accepted_cc %>%
+  select(funded_amnt, term, int_rate, installment,
+         revol_bal, revol_util, total_pymnt, total_rec_prncp, out_prncp, total_rec_int,
+         last_pymnt_amnt, last_pymnt_d, bc_open_to_buy, bc_util, mths_since_recent_bc,
+         num_bc_sats, num_sats, percent_bc_gt_75, total_bal_ex_mort,
+         total_bc_limit)
+```
+
+
+```{r}
+unique(accepted_cc$policy_code)
+```
+
+> Only one policy code - so remove the column.
+> 
+> The url column is not useful - it's been a while, and none of the urls work.
+> Remove the column.
+> The purpose and title columns are also not useful. The stated purpose is
+> for credit card refinancing/payments, but there is no guarantee that is what
+> the loan is going to be used for.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-c(policy_code, url, purpose, title))
+```
+
+```{r}
+head(accepted_cc[accepted_cc$total_bc_limit, ])
+```
+
+```{r}
+table(accepted_cc$tax_liens)
+table(accepted_cc$debt_settlement_flag)
+table(accepted_cc$hardship_flag)
+```
+
+> There are very few hardship cases - remove them.
+
+```{r}
+table(accepted_cc$hardship_flag)
+accepted_cc <- accepted_cc %>%
+  filter(hardship_flag == "N")
+
+table(accepted_cc$hardship_flag)
+accepted_cc <- accepted_cc %>%
+  select(-c(hardship_flag))
+```
+
+```{r}
+table(accepted_cc$inq_last_6mths)
+```
+
+```{r}
+table(accepted_cc$delinq_2yrs)
+```
+```{r}
+table(accepted_cc$pymnt_plan)
+```
+
+> There are only 96 payment plans set up. We can ignore this column,
+> or better yet, remove these rows, as they will get averaged out.
+
+```{r}
+if ("y" %in% accepted_cc$pymnt_plan) {
+  accepted_cc <- accepted_cc %>%
+    filter(pymnt_plan == "y")
+}
+
+table(accepted_cc$pymnt_plan)
+
+accepted_cc <- accepted_cc %>%
+  select(-c(pymnt_plan))
+```
+
+
+```{r}
+table(accepted_cc$verification_status)
+```
+
+```{r}
+table(accepted_cc$home_ownership)
+```
+
+> We can remove the ANY, NONE, OTHER rows.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  filter(home_ownership %in% c("MORTGAGE", "OWN", "RENT"))
+table(accepted_cc$home_ownership)
+```
+
+```{r}
+table(accepted_cc$term)
+```
+```{r}
+table(accepted_cc$mort_acc)
+```
+
+```{r}
+table(accepted_cc$chargeoff_within_12_mths)
+```
+
+```{r}
+head(accepted_cc$installment)
+```
+
+```{r}
+table(accepted_cc$acc_now_delinq)
+```
+
+```{r}
+table(accepted_cc$acc_open_past_24mths)
+```
+
+```{r}
+head(accepted_cc)
+```
+
+## 1.6.1 Remove numerical columns that are not useful
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  select(-c("mths_since_recent_bc", "num_bc_sats", "num_sats", 
+            "percent_bc_gt_75", "tax_liens", "total_bal_ex_mort", 
+            "total_bc_limit", "disbursement_method"))
+```
+
+```{r}
+table(accepted_cc$loan_status)
+```
+
+```{r}
+print(paste0(names(accepted_cc), collapse = ", "))
+accepted_cc
+```
+
+## 1.7 Split the data into training, validation, test sets
+
+```{r}
+accepted_cc %>%
+  group_by(term) %>%
+  summarise(
+    min_issue_date = min(issue_date),
+    max_issue_date = max(issue_date),
+    n = n()
+  )
+```
+
+We will use the 36-month data. This will allow us to get two non-overlapping cohorts within the 6-year data that we have. This will allow us to compare values of each of the columns we want to use between the cohorts. We should only use columns that are stable, and don't change from cohort to cohort. This will make our analysis long-lasting and future proof.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  filter(term == "36 months") %>%
+  select(-term)
+
+head(accepted_cc)
+```
+
+Keep 60% in the training dataset, 20% in the validation dataset, and 20% in the testing dataset. For inference, the training dataset is used. For prediction, the training and validation datasets are used. Once satisfied, the testing dataset is used only once to get the final prediction results.
+
+```{r}
+accepted_cc <- accepted_cc %>%
+  mutate(n = row_number()) %>% # create row number column
+  select(n, everything())
+
+train <- accepted_cc %>%
+  group_by(loan_status) %>%
+  sample_frac(0.6)
+
+validate_test <- accepted_cc %>% anti_join(train)
+
+validate <- validate_test %>%
+  group_by(loan_status) %>%
+  sample_frac(0.5)
+
+test <- validate_test %>% anti_join(validate)
+remove(validate_test)
+```
+
+```{r}
+nrow(accepted_cc)
+nrow(train)
+nrow(validate)
+nrow(test)
+```
+
+```{r}
+table(train$loan_status)
+table(validate$loan_status)
+table(test$loan_status)
+```
+
+It's good - each dataset has at least 1 value of each attribute of loan_status.
+
+## 1.8 Get cohorts using the training set
+
+We're analyzing cohorts, so we will split the data into multiple overlapping cohorts. Aggregating those cohorts will allow us to make predictions over business cycles.
+
+```{r}
+range(train$issue_date)
+```
+
+```{r}
+train %>%
+  ggplot(aes(issue_date)) +
+  geom_histogram(bins = 36)
+```
+
+Let's see how many 36-month loans were issues around the beginning of 2014.
+
+```{r}
+x <- train %>%
+  filter(issue_date %within% interval(ymd("2013-10-01"),
+                                      ymd("2013-12-31")))
+nrow(x)
+table(x$loan_status)
+
+x <- train %>%
+  filter(issue_date %within% interval(ymd("2015-10-01"),
+                                      ymd("2015-12-31")))
+nrow(x)
+table(x$loan_status)
+
+remove(x)
+```
+
+
+
+The range is 6 years 6 months. To split it into 3, we will give each cohort 2 years 2 months.
+
+```{r}
+min_cohort_date <- min(train$issue_date)
+max_cohort_date <- max(train$issue_date)
+
+cohorts <- list(c(min_cohort_date, 
+                  add_with_rollback(
+                    min_cohort_date, period(years = 2, months = 2))
+                  ),
+                c(add_with_rollback(
+                    min_cohort_date, period(years = 2, months = 2)),
+                  add_with_rollback(
+                    min_cohort_date, period(years = 4, months = 4))
+                  ),
+                c(add_with_rollback(
+                    min_cohort_date, period(years = 4, months = 4)),
+                  add_with_rollback(
+                    min_cohort_date, period(years = 6, months = 6)))
+                )
+
+cohorts
+
+# We assert that the end dates match
+testthat::expect_equal(cohorts[[1]][[1]], min_cohort_date)
+testthat::expect_equal(cohorts[[3]][[2]], max_cohort_date)
+```
+
+```{r}
+train <- train %>%
+  mutate(
+    cohort = case_when(
+      issue_date %within% interval(cohorts[[1]][[1]], 
+                                   cohorts[[1]][[2]]) ~ 1,
+      issue_date %within% interval(cohorts[[2]][[1]], 
+                                   cohorts[[2]][[2]]) ~ 2,
+      issue_date %within% interval(cohorts[[3]][[1]], 
+                                   cohorts[[3]][[2]]) ~ 3
+      )
+  ) 
+
+train %>%
+  group_by(cohort) %>%
+  summarise(
+    n = n()
+  )
+
+train %>%
+  ggplot(aes(issue_date)) +
+    geom_histogram(bins = 30) +
+    facet_wrap(~cohort)
+```
+
+```{r}
+cohort_groupings <- train %>%
+  group_by(cohort) %>%
+  summarise(
+    names = names(table(loan_status)),
+    num_rows = table(loan_status))
+
+cohort_groupings <- 
+  pivot_wider(cohort_groupings, names_from = names,
+              values_from = num_rows)
+cohort_groupings
+```
+
+## 1.9 Add DPD (Days Past Due) columns
+
+This is what the [Lending Club site](https://help.lendingclub.com/hc/en-us/articles/215488038-What-do-the-different-Note-statuses-mean-) says about the meaning of each loan status:
+
+  * Current: Loan is up to date on all outstanding payments. 
+  * In Grace Period: Loan is past due but within the 15-day grace period.
+  * Late (16-30): Loan has not been current for 16 to 30 days. Learn more about the
+    tools LendingClub has to deal with delinquent borrowers.
+  * Late (31-120): Loan has not been current for 31 to 120 days. Learn more about the
+    tools LendingClub has to deal with delinquent borrowers.
+  * Fully paid: Loan has been fully repaid, either at the expiration of the 3- or
+    5-year year term or as a result of a prepayment.
+  * Default: Loan has not been current for an extended period of time. Learn more
+    about the difference between “default” and “charge off”. 
+  * Charged Off: Loan for which there is no longer a reasonable expectation of
+    further payments. Charge Off typically occurs when a loan is 120 days or more
+    past due. 
+
+So the loan status follows this path:
+Current -> In Grace Period -> Late (16-30 days) -> Late (31-120 days) -> Charged Off
+                                                        Default
+Default occurs before Charged Off, but is not specified precisely where.
+Fully Paid can occur before the last payment (if pre-payments are made), or at the time of the last payment, or some time later when the borrower has enough funds.
+
+We should convert the loan_status column into a DPD (days past due) column. We can use this mapping:
+
+  * fully paid: (-Inf, -1) dpd. Numbers are given in a (min, max) range.
+  * current: (0, 0) dpd
+  * in grace period: (1, 15) dpd
+  * late (16-30 days): (16, 30) dpd
+  * late (31-120 days): (31, 120) dpd
+  * default: (45, 60) dpd
+  * charged off: (121, Inf) dpd
+
+```{r}
+train <- train %>%
+  mutate(
+    dpd_min = case_when(
+      loan_status == "Fully Paid" ~ -Inf,
+      loan_status == "Current" ~ 0,
+      loan_status == "In Grace Period" ~ 1,
+      loan_status == "Late (16-30 days)" ~ 16,
+      loan_status == "Late (31-120 days" ~ 31,
+      loan_status == "Default" ~ 45,
+      loan_status == "Charged Off" ~ 121
+    ),
+    dpd_max = case_when(
+      loan_status == "Fully Paid" ~ -1,
+      loan_status == "Current" ~ 0,
+      loan_status == "In Grace Period" ~ 15,
+      loan_status == "Late (16-30 days)" ~ 30,
+      loan_status == "Late (31-120 days" ~ 120,
+      loan_status == "Default" ~ 60,
+      loan_status == "Charged Off" ~ Inf
+    ),
+    .after = loan_status
+  )
+
+head(train)
+```
+
